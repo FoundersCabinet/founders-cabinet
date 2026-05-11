@@ -1,0 +1,204 @@
+# Founder's Cabinet — Vercel Deployment Guide
+
+═══════════════════════════════════════════════════════
+  TOTAL TIME: 10 MINUTES
+═══════════════════════════════════════════════════════
+
+You'll have a live URL anyone can visit at the end.
+
+═══════════════════════════════════════════════════════
+  STEP 1: SIGN UP FOR VERCEL (2 minutes)
+═══════════════════════════════════════════════════════
+
+1. Go to vercel.com
+2. Click "Sign Up"
+3. Choose "Continue with GitHub" (or Google/email)
+4. Confirm your email if needed
+5. You're in.
+
+═══════════════════════════════════════════════════════
+  STEP 2: DEPLOY THE APP (3 minutes)
+═══════════════════════════════════════════════════════
+
+Two options — pick the easier one for you:
+
+━━━ OPTION A: DRAG AND DROP (EASIEST) ━━━
+
+1. On the Vercel dashboard, look for "Add New..." → "Project"
+2. Or go to: vercel.com/new
+3. Look for the option that says "Deploy without Git" 
+   OR scroll down to find "Browse all templates" 
+   OR look for the upload area
+4. Drag the entire "vercel" folder onto the page
+5. Vercel will detect it as a static site
+6. Click "Deploy"
+
+━━━ OPTION B: CLI DEPLOYMENT (IF DRAG-DROP DOESN'T WORK) ━━━
+
+If you have Terminal/Command Prompt:
+
+1. Install Vercel CLI:
+   npm install -g vercel
+
+2. Open Terminal in the "vercel" folder:
+   cd path/to/vercel
+
+3. Run:
+   vercel
+
+4. It will ask:
+   - "Set up and deploy?" → Y
+   - "Which scope?" → (pick your account)
+   - "Link to existing project?" → N
+   - "Project name?" → founders-cabinet
+   - "Directory?" → ./
+   - "Override settings?" → N
+
+5. Wait 30 seconds. You'll get a URL.
+
+═══════════════════════════════════════════════════════
+  STEP 3: ADD YOUR API KEY (3 minutes — CRITICAL)
+═══════════════════════════════════════════════════════
+
+This is the most important step. Without this, the AI 
+features won't work.
+
+1. In Vercel dashboard, click on your "founders-cabinet" project
+2. Click "Settings" (top tab)
+3. Click "Environment Variables" in the left sidebar
+4. Click "Add New" or "+ Add"
+5. Fill in:
+   - KEY:   ANTHROPIC_API_KEY
+   - VALUE: (paste your key from console.anthropic.com)
+            Starts with sk-ant-...
+   - ENVIRONMENT: ✓ Production ✓ Preview ✓ Development (check all)
+6. Click "Save"
+
+═══════════════════════════════════════════════════════
+  STEP 4: REDEPLOY TO ACTIVATE THE KEY (1 minute)
+═══════════════════════════════════════════════════════
+
+The API key only takes effect after a redeploy:
+
+1. In your project dashboard, click "Deployments" (top tab)
+2. Find the most recent deployment at the top
+3. Click the "..." menu (three dots) on the right
+4. Click "Redeploy"
+5. Confirm "Redeploy"
+6. Wait 30-60 seconds
+
+═══════════════════════════════════════════════════════
+  STEP 5: VISIT YOUR LIVE APP (1 minute)
+═══════════════════════════════════════════════════════
+
+1. Click "Visit" or copy the URL at the top of your project
+2. You'll see something like:
+   founders-cabinet-yourname.vercel.app
+3. Open it in your browser
+4. Test the onboarding flow
+5. Try "Analyze My Idea" — the AI should respond!
+
+═══════════════════════════════════════════════════════
+  TEST CHECKLIST
+═══════════════════════════════════════════════════════
+
+✓ App loads with the splash screen
+✓ Location auto-detects 
+✓ Type a business idea, click "Analyze My Idea"
+✓ AI returns concept, opportunity, customer, actions, etc.
+✓ Click through onboarding to War Room
+✓ Daily Operator generates a personalized plan
+✓ "Build" tab generates a business plan PDF
+✓ "Social" tab generates 30 posts
+✓ "Outreach" tab generates 50 messages
+✓ "Sales" tab generates the toolkit
+✓ "Advisors" tab — chat with any advisor
+
+If any of these fail, see Troubleshooting below.
+
+═══════════════════════════════════════════════════════
+  YOUR LIVE URL — SHARE IT
+═══════════════════════════════════════════════════════
+
+Vercel gives you a URL like:
+   founders-cabinet-yourname.vercel.app
+
+Share this with anyone. They can use the app immediately.
+For a custom domain (like founderscabinet.com):
+   1. Buy a domain (Namecheap, GoDaddy, etc.)
+   2. In Vercel: Settings → Domains → Add
+   3. Follow the DNS instructions
+
+═══════════════════════════════════════════════════════
+  TROUBLESHOOTING
+═══════════════════════════════════════════════════════
+
+▸ "API key not configured" error
+  → Go back to Step 3. Make sure the key name is EXACTLY
+    ANTHROPIC_API_KEY (all caps, underscore)
+  → Then do Step 4 (redeploy) — env vars only activate
+    after redeploy
+
+▸ White screen / app doesn't load
+  → Open browser console (F12 or right-click → Inspect)
+  → Look for errors
+  → Most common: index.html didn't upload correctly
+  → Try the deployment again
+
+▸ "Invalid response format" error  
+  → This means the request didn't reach Anthropic
+  → Check Vercel function logs:
+    Project → Deployments → click latest → Functions tab
+  → Look for errors
+
+▸ AI works on first try then fails
+  → You may have hit your Anthropic credit limit
+  → Add more credit at console.anthropic.com → Billing
+
+═══════════════════════════════════════════════════════
+  COSTS
+═══════════════════════════════════════════════════════
+
+VERCEL: $0/month (free tier handles up to 100 active 
+        users easily)
+
+ANTHROPIC API: ~$3-4 per active user per month
+        - $10 credit gets you about 50-80 users tested
+        - Add more in console.anthropic.com → Billing
+
+YOUR REVENUE: $49 × 100 users = $4,900/month
+LESS COSTS:   ~$400/month (API) + $0 (Vercel free)
+NET PROFIT:   ~$4,500/month at 100 users
+
+═══════════════════════════════════════════════════════
+  WHAT TO DO RIGHT AFTER LAUNCH
+═══════════════════════════════════════════════════════
+
+1. Open the app yourself first. Test every feature.
+
+2. Send the URL to 5 small business owners you know.
+   Don't explain anything. Just say:
+   "I built this AI tool for small businesses.
+    Try it for 10 minutes and tell me what you think."
+
+3. Watch them use it (over Zoom or in person).
+   Note where they hesitate, get confused, or close the app.
+
+4. Listen for the moment they say "wait, this is cool."
+   That moment is your marketing.
+
+5. After 5 people have tested it, decide:
+   - Keep iterating (free for now)
+   - Or start charging ($49/month via Stripe)
+
+═══════════════════════════════════════════════════════
+  NEED HELP?
+═══════════════════════════════════════════════════════
+
+Take screenshots of any errors and send them.
+Don't try to fix it alone — there's almost always a
+simple solution.
+
+═══════════════════════════════════════════════════════
+  YOU'RE 10 MINUTES AWAY FROM HAVING A REAL BUSINESS
+═══════════════════════════════════════════════════════
