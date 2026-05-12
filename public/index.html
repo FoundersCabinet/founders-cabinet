@@ -19,7 +19,6 @@
     @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
     button { font-family: inherit; }
     input, textarea { font-family: inherit; }
-    /* Loading state before React mounts */
     .initial-loader { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #060910; }
     .initial-loader-inner { text-align: center; }
     .initial-loader-logo { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 900; background: linear-gradient(90deg,#F4C430,#FF6B35); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 12px; }
@@ -111,7 +110,6 @@ async function callClaude(system, messages, useSearch = false, retries = 2, maxT
   }
   return "Unable to respond. Please try again.";
 }
-
 async function callClaudeJSON(system, msg, useSearch = false, maxTokens = 1000) {
   try {
     const raw = await callClaude(system, [{ role:"user", content:msg }], useSearch, 2, maxTokens);
@@ -4123,22 +4121,34 @@ function Onboarding({ onComplete }) {
     try {
       const locStr = [form.city, form.region, form.country].filter(Boolean).join(", ") || "their location";
       const raw = await callClaude(
-        "You are a sharp business strategist. Analyze this business idea with location-specific insight. Return ONLY labeled lines.",
+        `You are a sharp business strategist. CRITICAL RULES:
+1. You MUST analyze ONLY the exact business described below. Do NOT invent, substitute, or assume a different business type.
+2. If they describe an ad agency, analyze an ad agency. If they describe a painter, analyze a painter. Do NOT default to wedding/event/generic businesses.
+3. Every field must reference the SPECIFIC business they wrote. If you cannot tie a field directly to their words, return shorter/safer content.
+4. Return ONLY labeled lines, nothing else.`,
         [{ role:"user", content:
-          `Business idea from ${name}, located in ${locStr}: "${idea}"
+          `THE FOUNDER'S EXACT WORDS (analyze ONLY this, do not substitute):
+"""
+${idea}
+"""
 
-Return ONLY these labeled lines, nothing else:
-CONCEPT: [Rewrite their idea as one crisp professional sentence]
-OPPORTUNITY: [One sentence on the real market opportunity in ${locStr || "their market"}]
-CUSTOMER: [Exactly who to target first — be specific to ${locStr || "their location"}]
-INDUSTRY: [Pick one: Home Services, Professional Services, Health, Food, Creative, Media, Retail, Real Estate, Technology, Education, Construction, Beauty, Events, Other]
-FIRST_ACTION: [Most important action in next 7 days — be specific]
-SECOND_ACTION: [Second most important action]
-THIRD_ACTION: [Third action]
-CHALLENGE: [Biggest challenge to watch out for]
-TAGLINE: [Punchy 6-8 word tagline]
+Founder name: ${name}
+Location: ${locStr}
+
+Now return ONLY these labeled lines based EXACTLY on what they wrote above. Reference specific words/phrases from their description in your answers:
+
+ECHO: [Quote 5-10 specific words from their idea that prove you understood it — for example if they said "ad agency for local businesses" quote that exact phrase]
+CONCEPT: [Rewrite THEIR specific idea as one crisp professional sentence. Use the same industry/business type they described. Do NOT change what their business is.]
+OPPORTUNITY: [One sentence on the market opportunity for THIS SPECIFIC business they described. Reference their actual business type.]
+CUSTOMER: [Who THIS specific business should target first. If they're an ad agency for local businesses, customers are local business owners — NOT couples or anything generic.]
+INDUSTRY: [Pick one that matches THEIR business: Home Services, Professional Services, Health, Food, Creative, Media, Retail, Real Estate, Technology, Education, Construction, Beauty, Events, Other]
+FIRST_ACTION: [Specific action for THEIR business in next 7 days. Must directly relate to what they described.]
+SECOND_ACTION: [Second action specific to THEIR business]
+THIRD_ACTION: [Third action specific to THEIR business]
+CHALLENGE: [Biggest challenge for THIS SPECIFIC business type]
+TAGLINE: [Punchy 6-8 word tagline that fits THEIR business — not a generic one]
 REVENUE_GOAL: [Realistic monthly revenue by month 6 — number only like 8000]` }],
-        false, 2, 800
+        false, 2, 1000
       );
       const grab = (label) => raw.match(new RegExp(label + ":\\s*(.+)", "i"))?.[1]?.trim() || "";
       const indRaw = grab("INDUSTRY").toLowerCase();
