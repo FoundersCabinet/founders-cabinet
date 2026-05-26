@@ -94,7 +94,7 @@ async function callClaude(system, messages, useSearch = false, retries = 2, maxT
       });
       if (!res.ok) {
         const data = await res.json().catch(()=>({}));
-        const errMsg = data.error || `Server error ${res.status}`;
+        const errMsg = data.error || ("Server error " + res.status);
         if (res.status >= 500 && i < retries) continue;
         throw new Error(errMsg);
       }
@@ -110,6 +110,7 @@ async function callClaude(system, messages, useSearch = false, retries = 2, maxT
   }
   return "Unable to respond. Please try again.";
 }
+
 async function callClaudeJSON(system, msg, useSearch = false, maxTokens = 1000) {
   try {
     const raw = await callClaude(system, [{ role:"user", content:msg }], useSearch, 2, maxTokens);
@@ -5069,12 +5070,6 @@ Output ONLY valid JSON (no markdown):
         <div style={{flex:1,display:"flex",gap:2,overflowX:"auto",alignItems:"center"}}>
           {CORE_NAV.map(n=>(
             <button key={n.id} onClick={()=>setView(n.id)} style={{padding:"5px 10px",borderRadius:7,cursor:"pointer",fontSize:10,fontWeight:500,transition:"all .2s",background:view===n.id?"rgba(244,196,48,0.12)":"transparent",border:`1px solid ${view===n.id?"rgba(244,196,48,0.3)":"transparent"}`,color:view===n.id?"#F4C430":"rgba(255,255,255,0.35)",flexShrink:0,fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap"}}>
-              <span style={{marginRight:3}}>{n.icon}</span>{n.label}
-            </button>
-          ))}
-          <div style={{width:1,height:18,background:"rgba(255,255,255,0.1)",flexShrink:0,margin:"0 3px"}}/>
-          {GROWTH_NAV.map(n=>(
-            <button key={n.id} onClick={()=>setView(n.id)} style={{padding:"5px 10px",borderRadius:7,cursor:"pointer",fontSize:10,fontWeight:500,transition:"all .2s",background:view===n.id?"rgba(255,107,53,0.14)":"transparent",border:`1px solid ${view===n.id?"rgba(255,107,53,0.4)":"transparent"}`,color:view===n.id?"#FF6B35":"rgba(255,255,255,0.35)",flexShrink:0,fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap"}}>
               <span style={{marginRight:3}}>{n.icon}</span>{n.label}
             </button>
           ))}
