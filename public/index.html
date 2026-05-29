@@ -4545,7 +4545,7 @@ REVENUE_GOAL: [Realistic monthly revenue by month 6 — number only like 8000]` 
               value={idea}
               onChange={e=>setIdea(e.target.value)}
               placeholder="e.g. I want to start a painting company. Tired of working for someone else. Don't know how to get clients."
-              rows={5}
+              rows={7}
               style={{ ...inputBase, fontSize:14, padding:"14px 18px", lineHeight:1.65, resize:"none" }}
             />
             <div style={{ fontSize:11, color:"rgba(255,255,255,0.25)", marginTop:8, textAlign:"center" }}>More detail = better advice. Don't overthink it.</div>
@@ -4716,10 +4716,21 @@ REVENUE_GOAL: [Realistic monthly revenue by month 6 — number only like 8000]` 
   if (step === 7) return (
     <OnboardingShell title="Last step 🚀" sub="One vision question + confirm your location." step={6} totalSteps={TOTAL_STEPS} canNext={!!(form.city||form.country)} onNext={()=>onComplete(form)} onBack={()=>setStep(6)} nextLabel="Open My War Room 🚀" locTag={locTag}>
       <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-        <div style={{ background:"linear-gradient(135deg, rgba(244,196,48,0.06), rgba(255,107,53,0.04))", border:"1px solid rgba(244,196,48,0.2)", borderRadius:14, padding:"18px" }}>
-          <div style={{ fontSize:9, color:"rgba(244,196,48,0.8)", letterSpacing:2, textTransform:"uppercase", marginBottom:10, fontWeight:600 }}>🌟 Your 12-Month Vision</div>
-          <textarea value={form.vision} onChange={e=>set("vision",e.target.value)} rows={3} placeholder="In 12 months, my business looks like... (optional but powerful)"
-            style={{ ...SI, fontSize:14, lineHeight:1.6, padding:"12px 14px" }}/>
+        <div style={{ background:"linear-gradient(135deg, rgba(244,196,48,0.08), rgba(255,107,53,0.05))", border:"1px solid rgba(244,196,48,0.25)", borderRadius:16, padding:"22px" }}>
+          <div style={{ fontSize:9, color:"rgba(244,196,48,0.85)", letterSpacing:2.5, textTransform:"uppercase", marginBottom:6, fontWeight:700 }}>🌟 Your 12-Month Vision</div>
+          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:900, color:"#fff", marginBottom:8, lineHeight:1.2, letterSpacing:"-0.01em" }}>Where do you want to be a year from today?</div>
+          <div style={{ fontSize:13, color:"rgba(255,255,255,0.5)", marginBottom:16, lineHeight:1.55, fontWeight:300 }}>
+            Be specific. Revenue, lifestyle, team size, what your days look like — paint the full picture. This is what we'll quietly work toward in every recommendation.
+          </div>
+          <textarea
+            value={form.vision}
+            onChange={e=>set("vision",e.target.value)}
+            rows={8}
+            placeholder="Example: I want $20K/month in recurring revenue, a small team of 2-3 contractors, working 4 days a week, with enough freedom to travel one week a month. I want to be known as the go-to person in my city for [your specialty]. My business funds my life — not the other way around."
+            style={{ ...SI, fontSize:14, lineHeight:1.7, padding:"16px 18px", minHeight:200, resize:"vertical", borderRadius:12 }}/>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginTop:10, fontStyle:"italic", lineHeight:1.5 }}>
+            💡 Dream bigger than what feels comfortable. We'll help you build it.
+          </div>
         </div>
         <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:14, padding:"18px" }}>
           <div style={{ fontSize:9, color:"rgba(255,255,255,0.5)", letterSpacing:2, textTransform:"uppercase", marginBottom:14, fontWeight:600 }}>📍 Confirm Your Location</div>
