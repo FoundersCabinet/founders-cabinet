@@ -186,9 +186,43 @@ async function detectLocation() {
 }
 
 // ─── Context ─────────────────────────────────────────────────────────────────
+// ─── Pull cross-advisor context: what other advisors have said + key user data ──
+function buildCrossAdvisorSummary(convos, activePillarId) {
+  if (!convos) return "";
+  const lines = [];
+  for (const pid of Object.keys(convos)) {
+    if (pid === activePillarId) continue;
+    const msgs = convos[pid] || [];
+    const lastAssistant = [...msgs].reverse().find(m => m.role === "assistant" && typeof m.content === "string");
+    if (lastAssistant) {
+      const advisor = (PILLARS.find(p => p.id === pid)?.role) || pid;
+      // Take first 240 chars so the AI has the gist without being overwhelmed
+      lines.push(`${advisor} most recently said: "${lastAssistant.content.replace(/\s+/g, " ").slice(0, 240).trim()}${lastAssistant.content.length > 240 ? "…" : ""}"`);
+    }
+  }
+  return lines.length ? `\nWHAT OTHER ADVISORS HAVE SAID (reference this so we speak with one voice):\n${lines.map(l => "• " + l).join("\n")}` : "";
+}
+
+// ─── Pull saved work so advisors reference real outputs, not assumptions ────
+function buildSavedWorkSummary(savedWork) {
+  if (!savedWork) return "";
+  const lines = [];
+  if (savedWork.businessPlan?.summary) lines.push(`Business Plan summary: ${savedWork.businessPlan.summary.slice(0, 200).trim()}…`);
+  if (savedWork.dailyPlan?.oneThing) lines.push(`Today's One Thing: ${savedWork.dailyPlan.oneThing}`);
+  if (savedWork.dailyPlan?.weeksLeverage) lines.push(`This week's leverage point: ${savedWork.dailyPlan.weeksLeverage}`);
+  const wins = savedWork.wins?.slice(0, 3).map(w => w.title).filter(Boolean);
+  if (wins?.length) lines.push(`Recent wins: ${wins.join("; ")}`);
+  const revLog = savedWork.revLog || [];
+  if (revLog.length) {
+    const total = revLog.reduce((s, r) => s + Number(r.amount || 0), 0);
+    lines.push(`Revenue logged in app so far: $${total.toLocaleString()}`);
+  }
+  return lines.length ? `\nUSER'S WORK SO FAR (build on what we already know, don't restart from scratch):\n${lines.map(l => "• " + l).join("\n")}` : "";
+}
+
 function buildCtx(profile, memory = [], brandKit = null) {
   if (!profile) return "";
-  const mem = memory.length ? `\nMEMORY:\n${memory.slice(-15).map(m=>`• ${m}`).join("\n")}` : "";
+  const mem = memory.length ? `\nLEARNED ABOUT THIS USER (apply naturally — don't recite back):\n${memory.slice(-15).map(m=>"• "+m).join("\n")}` : "";
   const brand = brandKit ? `\nBRAND KIT:
 - Primary Color: ${brandKit.primaryColor||"Not set"}
 - Secondary Colors: ${brandKit.secondaryColors?.join(", ")||"Not set"}
@@ -197,29 +231,85 @@ function buildCtx(profile, memory = [], brandKit = null) {
 - Brand Personality: ${brandKit.personality||"Not set"}
 - Logo: ${brandKit.logoUrl?"Uploaded (use brand colors in all creative work)":"Not uploaded"}` : "";
   const isIdea = profile.mode === "idea";
-  return `BUSINESS: ${isIdea?profile.ideaDescription:profile.businessName} | MODE: ${isIdea?"Pre-launch":"Active"} | INDUSTRY: ${profile.industry}
-OWNER: ${profile.ownerName} | STAGE: ${profile.stage||"N/A"}
-LOCATION: ${profile.city}${profile.region?", "+profile.region:""}, ${profile.country}
-BUDGET: ${profile.budget} | REVENUE: $${Number(profile.revenue||0).toLocaleString()}/mo | GOAL: $${Number(profile.revenueGoal||0).toLocaleString()}/mo
-TEAM: ${profile.teamSize||"Solo"} | CUSTOMER: ${profile.targetCustomer||"Not defined"}
-GOALS: ${profile.goals||"Not set"} | CHALLENGES: ${profile.challenges||"Not set"}
-TIME: ${DAY}, ${MONTH} ${YEAR} | SEASON: ${SEASON}${brand}${mem}`;
+  return `THE FOUNDER YOU ADVISE:
+- Business: ${isIdea ? profile.ideaDescription : profile.businessName}
+- Mode: ${isIdea ? "Pre-launch / validating" : "Active business"}
+- Industry: ${profile.industry || "Not specified"}
+- Owner: ${profile.ownerName || "Founder"}
+- Stage: ${profile.stage || "N/A"}
+- Location: ${profile.city}${profile.region ? ", " + profile.region : ""}, ${profile.country}
+- Budget: ${profile.budget || "Not specified"}
+- Current Revenue: $${Number(profile.revenue || 0).toLocaleString()}/mo
+- Revenue Goal: $${Number(profile.revenueGoal || 0).toLocaleString()}/mo
+- Team Size: ${profile.teamSize || "Solo"}
+- Target Customer: ${profile.targetCustomer || "Not defined"}
+- Goals: ${profile.goals || "Not set"}
+- Challenges: ${profile.challenges || "Not set"}
+- Today: ${DAY}, ${MONTH} ${YEAR} (${SEASON})${brand}${mem}`;
 }
 
-function getAdvisorSys(pillarId, profile, memory, brandKit, isHandoff=false, reason="") {
+// ─── Universal honesty + formatting rules baked into every AI call ────────
+const FACTUAL_RULES = `
+CRITICAL HONESTY RULES (non-negotiable):
+1. If you don't have verified, current data, label it clearly:
+   - Real-time numbers (CPCs, ad rates, salaries, market sizes): say "directional estimate — verify with [the actual source they should check]"
+   - Industry benchmarks: cite the source if you know it, OR say "based on general industry patterns — actual figures vary"
+   - Local market specifics (competitors, neighborhoods, regulations): say "you'll want to confirm this locally" if not sure
+2. NEVER fabricate specific statistics, company names, or named studies. If you'd need to make up a citation, don't include the statistic.
+3. When recommending a tool, platform, or service, only name ones you're confident exist as of late 2024 or early 2025.
+4. If the user asks something you genuinely don't know, say so clearly and tell them exactly how to find out.
+
+FORMAT RULES (prevent reading fatigue):
+- Lead with the single most important sentence — the answer they need first.
+- Use short paragraphs (2-3 sentences max). White space helps.
+- Bold ONE key insight per response (the headline takeaway).
+- Use bullets for lists of 3+ items. Use prose for flowing thought.
+- Keep total length under 300 words unless they ask for depth.
+- No corporate filler ("Great question!", "I'd be happy to help"). Start with the answer.
+`;
+
+function getAdvisorSys(pillarId, profile, memory, brandKit, isHandoff=false, reason="", convos=null, savedWork=null) {
   const p = PILLARS.find(x => x.id===pillarId) || PILLARS[0];
   const ctx = buildCtx(profile, memory, brandKit);
+  const crossAdvisor = buildCrossAdvisorSummary(convos, pillarId);
+  const savedSummary = buildSavedWorkSummary(savedWork);
   const isIdea = profile?.mode==="idea";
   const hasBrand = !!brandKit?.primaryColor;
   const voice = {
-    strategy:  `Give sharp strategic advice: business model, positioning, growth levers. Reference local market in ${profile?.city}. Use web search for current trends.`,
-    marketing: `Give creative, platform-specific advice with REAL numbers. Include specific ad formats, CPMs/CPCs for ${profile?.city} in ${SEASON} ${YEAR} (search the web). ${hasBrand?`Always incorporate their brand colors (${brandKit.primaryColor}) and voice (${brandKit.voice||"professional"}) into all creative recommendations.`:""}`,
-    finance:   `Give specific financial guidance: exact numbers, pricing formulas, ROI calculations, profit margin benchmarks. Use web search for current rates.`,
-    sales:     `Give concrete sales advice: scripts, frameworks, closing techniques. Reference seasonal buying for ${SEASON} in ${profile?.city}. Be direct.`,
-    mindset:   `Be warm but direct. One clear reframe + one immediate action. No fluff.`,
+    strategy:  `You are the CSO (Chief Strategy Officer). Give sharp positioning, business-model, and growth-lever advice. When discussing market trends or competitor moves, web-search to ground claims in current data. If you cite a market size or competitor stat, label your confidence ("verified", "directional estimate", or "you should verify").`,
+    marketing: `You are the CMO (Chief Marketing Officer). Give platform-specific advice with realistic ranges (not invented exact numbers). When you mention CPC/CPM/conversion benchmarks, label them as "industry-range estimates — verify in your ad platform" unless you've web-searched current ${profile?.city || "local"} data. ${hasBrand?`Always incorporate their brand colors (${brandKit.primaryColor}) and voice (${brandKit.voice||"professional"}).`:""}`,
+    finance:   `You are the CFO (Chief Financial Officer). Give specific math (pricing, margins, ROI formulas) — show your work so the user can verify. For salary/tax/legal/rate benchmarks, label them as "directional — confirm with your accountant or current local data". Never invent specific statistics.`,
+    sales:     `You are the CSO (Chief Sales Officer). Give concrete scripts, frameworks, and closing techniques. Reference seasonal buying patterns when relevant. Be direct. If you reference a sales methodology, only name well-known ones (SPIN, Challenger, MEDDIC, Sandler, etc.).`,
+    mindset:   `You are the founder's mindset coach. Be warm but direct. One clear reframe + one immediate action. No fluff. No toxic positivity. No invented psychological "studies" — speak from observed founder patterns.`,
   };
-  if (isHandoff) return `You are the ${p.role} at Founder's Cabinet. Add your brief cross-department perspective in 100–150 words. Start directly — no preamble.\n\n${ctx}\n\nCONTEXT: ${reason}\n\n${voice[pillarId]||""}`;
-  return `You are the ${p.role} at Founder's Cabinet — world-class advisory firm. Give brutally specific, actionable advice. NEVER generic. Every response reflects their exact business, location, budget, season, and brand. Use web search for current data.\n\n${isIdea?"PRE-LAUNCH: help validate and build.":"ACTIVE BUSINESS: build on what they have."}\n\n${ctx}\n\n${voice[pillarId]||""}\n\nFormat with headers and bullets. Be direct. Max 400 words.`;
+
+  if (isHandoff) {
+    return `You are the ${p.role} at Founder's Cabinet. Another advisor just answered the founder's question. Add YOUR brief cross-department perspective — 80-120 words max. Build on what was just said; don't repeat it.
+
+${FACTUAL_RULES}
+
+${ctx}${crossAdvisor}${savedSummary}
+
+HANDOFF REASON: ${reason}
+
+${voice[pillarId]||""}
+
+Start directly with your insight. No preamble. No "As the ${p.role}...". Just the value.`;
+  }
+
+  return `You are the ${p.role} at Founder's Cabinet — a world-class executive advisory firm. The founder is consulting you specifically because of your domain expertise. You speak with the other advisors regularly and you reference their work so the team gives unified, coordinated advice.
+
+${FACTUAL_RULES}
+
+${ctx}${crossAdvisor}${savedSummary}
+
+YOUR ROLE FOR THIS USER: ${isIdea ? "PRE-LAUNCH — help them validate and build their first version." : "ACTIVE BUSINESS — build on what they already have. Don't restart their thinking from zero."}
+
+${voice[pillarId]||""}
+
+When other advisors have already weighed in (see above), build on or constructively challenge their points — never contradict them randomly or pretend you didn't see them. You're one executive team, not five strangers.
+
+Max 350 words. Make every word earn its place.`;
 }
 
 // ─── Graphics ─────────────────────────────────────────────────────────────────
@@ -1126,7 +1216,19 @@ Marketing Budget: ${budget}
 Brand Voice: ${brandKit?.voice || "Not set"}
 Brand Tagline: ${brandKit?.tagline || "Not set"}`;
 
-    const sys = "You are a senior business consultant writing personalized business plans. Be specific, actionable, and direct. No fluff, no filler.";
+    const sys = `You are a senior business consultant writing a personalized business plan. Be specific, actionable, direct. No fluff, no filler.
+
+HONESTY RULES (non-negotiable):
+- For market size, industry growth rate, competitor revenue, or any specific statistic: if you don't have a verified source, write "directional estimate" or "industry-pattern based — verify with current local data". Never invent specific numbers.
+- For pricing benchmarks: give realistic ranges, not invented exact figures. Tell the user how to verify.
+- For local market specifics (Toronto CPCs, Vaughan demographics, etc.): note "you'll want to confirm with current local data" if you're not sure.
+- If you'd need to fabricate a citation to support a number, leave the number out.
+
+FORMAT RULES (prevent reading fatigue):
+- Lead each section with a one-sentence headline takeaway.
+- Short paragraphs (2-3 sentences max).
+- Use bullets for lists. Use bold sparingly — once or twice per section for the key insight.
+- Write at a grade-9 reading level. Plain words, not jargon.`;
     const sections = {};
 
     try {
@@ -1206,48 +1308,386 @@ Brand Tagline: ${brandKit?.tagline || "Not set"}`;
 
   // ── Generate the actual PDF using browser print ──
   const downloadPDF = (plan) => {
-    const accent = brandKit?.primaryColor || "#F4C430";
+    // Default to Founder's Cabinet brand colors when user hasn't set their own
+    const hasBrand = !!brandKit?.primaryColor;
+    const accent     = hasBrand ? brandKit.primaryColor : "#F4C430";    // gold
+    const accent2    = hasBrand ? (brandKit.secondaryColor || accent)   // their secondary or fallback
+                                : "#FF6B35";                              // signature coral
+    const darkBg     = "#0a0e1a";
+    const subtleGray = "#f7f5f0";
+    const tagline    = brandKit?.tagline || "";
+
     const html = `<!DOCTYPE html>
 <html><head><title>${plan.meta.biz} — Business Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&family=Playfair+Display:wght@400;700;900&display=swap" rel="stylesheet"/>
 <style>
-  @page { size: letter; margin: 0.75in; }
-  body { font-family: 'Helvetica', 'Arial', sans-serif; color: #1a1a1a; line-height: 1.6; max-width: 7in; margin: 0 auto; padding: 0; }
-  .cover { text-align: center; padding: 4in 0 2in; page-break-after: always; }
-  .cover h1 { font-family: 'Georgia', serif; font-size: 48pt; font-weight: 900; color: ${accent}; margin: 0 0 12pt; line-height: 1.05; }
-  .cover .sub { font-size: 14pt; color: #666; font-style: italic; margin-bottom: 32pt; }
-  .cover .meta { font-size: 11pt; color: #999; }
-  .cover .by { margin-top: 80pt; font-size: 10pt; color: #999; letter-spacing: 2pt; text-transform: uppercase; }
-  h2 { font-family: 'Georgia', serif; font-size: 22pt; font-weight: 900; color: ${accent}; margin: 36pt 0 12pt; padding-bottom: 6pt; border-bottom: 2pt solid ${accent}; page-break-after: avoid; }
-  h3 { font-size: 13pt; font-weight: 700; color: #1a1a1a; margin: 18pt 0 6pt; }
-  p { margin: 0 0 12pt; font-size: 11pt; }
-  .section { page-break-inside: avoid; margin-bottom: 24pt; }
-  .footer { margin-top: 48pt; padding-top: 18pt; border-top: 1pt solid #ddd; text-align: center; font-size: 9pt; color: #999; font-style: italic; }
+  @page { size: letter; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', 'Helvetica', sans-serif; color: #1a1a1a; line-height: 1.65; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* ─── COVER PAGE ─── */
+  .cover {
+    width: 8.5in;
+    height: 11in;
+    background: linear-gradient(135deg, ${darkBg} 0%, #1a1f2e 100%);
+    color: #fff;
+    padding: 1in 0.85in;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover::before {
+    content: '';
+    position: absolute;
+    top: -2in;
+    right: -2in;
+    width: 6in;
+    height: 6in;
+    border-radius: 50%;
+    background: radial-gradient(circle, ${accent}33 0%, transparent 70%);
+  }
+  .cover::after {
+    content: '';
+    position: absolute;
+    bottom: -2in;
+    left: -1.5in;
+    width: 5in;
+    height: 5in;
+    border-radius: 50%;
+    background: radial-gradient(circle, ${accent2}22 0%, transparent 70%);
+  }
+  .cover-inner { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; }
+  .cover-header {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 9pt;
+    letter-spacing: 4pt;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: ${accent};
+    margin-bottom: auto;
+  }
+  .cover-header .pill {
+    display: inline-block;
+    padding: 5pt 12pt;
+    border: 1pt solid ${accent}88;
+    border-radius: 100pt;
+    background: ${accent}11;
+  }
+  .cover-title-block { padding: 1.2in 0 0.6in; }
+  .cover-eyebrow {
+    font-size: 10pt;
+    letter-spacing: 3pt;
+    text-transform: uppercase;
+    color: ${accent};
+    font-weight: 700;
+    margin-bottom: 20pt;
+  }
+  .cover-title {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 56pt;
+    font-weight: 900;
+    line-height: 0.95;
+    letter-spacing: -1pt;
+    color: #fff;
+    margin-bottom: 24pt;
+    background: linear-gradient(135deg, #fff 0%, ${accent} 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .cover-tagline {
+    font-family: 'Playfair Display', serif;
+    font-size: 16pt;
+    font-style: italic;
+    font-weight: 400;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 40pt;
+    line-height: 1.4;
+  }
+  .cover-divider {
+    width: 60pt;
+    height: 3pt;
+    background: linear-gradient(90deg, ${accent}, ${accent2});
+    margin-bottom: 28pt;
+  }
+  .cover-meta {
+    font-size: 10pt;
+    color: rgba(255,255,255,0.55);
+    line-height: 2;
+    letter-spacing: 0.5pt;
+  }
+  .cover-meta strong {
+    color: #fff;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+  .cover-footer {
+    margin-top: auto;
+    padding-top: 0.4in;
+    border-top: 1pt solid rgba(255,255,255,0.08);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 8pt;
+    color: rgba(255,255,255,0.4);
+    letter-spacing: 2pt;
+    text-transform: uppercase;
+  }
+  .cover-footer .logo {
+    color: ${accent};
+    font-weight: 700;
+  }
+
+  /* ─── TABLE OF CONTENTS PAGE ─── */
+  .toc-page {
+    width: 8.5in;
+    height: 11in;
+    padding: 1in 1in;
+    page-break-after: always;
+    background: ${subtleGray};
+  }
+  .toc-eyebrow {
+    font-size: 9pt;
+    letter-spacing: 3pt;
+    text-transform: uppercase;
+    color: ${accent2};
+    font-weight: 700;
+    margin-bottom: 14pt;
+  }
+  .toc-title {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 42pt;
+    font-weight: 900;
+    line-height: 1;
+    color: ${darkBg};
+    margin-bottom: 6pt;
+    letter-spacing: -1pt;
+  }
+  .toc-sub {
+    font-size: 11pt;
+    color: #666;
+    font-style: italic;
+    margin-bottom: 40pt;
+  }
+  .toc-divider {
+    width: 50pt;
+    height: 3pt;
+    background: linear-gradient(90deg, ${accent}, ${accent2});
+    margin-bottom: 36pt;
+  }
+  .toc-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 14pt 0;
+    border-bottom: 1pt solid rgba(0,0,0,0.08);
+    font-size: 12pt;
+    color: ${darkBg};
+  }
+  .toc-item .num {
+    font-family: 'Playfair Display', serif;
+    font-weight: 900;
+    color: ${accent};
+    font-size: 14pt;
+    margin-right: 14pt;
+    min-width: 28pt;
+  }
+  .toc-item .title {
+    font-weight: 600;
+    flex: 1;
+  }
+  .toc-item .pg {
+    color: #999;
+    font-size: 10pt;
+    letter-spacing: 1pt;
+  }
+
+  /* ─── CONTENT PAGES ─── */
+  .content {
+    padding: 0.8in 1in;
+    max-width: 8.5in;
+  }
+  .section {
+    page-break-inside: avoid;
+    margin-bottom: 32pt;
+  }
+  .section-header {
+    margin-bottom: 22pt;
+    padding-bottom: 12pt;
+    border-bottom: 2pt solid ${accent};
+    position: relative;
+  }
+  .section-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 10pt;
+    color: ${accent};
+    font-weight: 700;
+    letter-spacing: 3pt;
+    text-transform: uppercase;
+    margin-bottom: 6pt;
+  }
+  .section-title {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 28pt;
+    font-weight: 900;
+    color: ${darkBg};
+    line-height: 1.05;
+    letter-spacing: -0.5pt;
+  }
+  .section-body p {
+    margin: 0 0 14pt;
+    font-size: 11pt;
+    line-height: 1.7;
+    color: #2a2a2a;
+  }
+  .section-body p:first-of-type::first-letter {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 44pt;
+    font-weight: 900;
+    float: left;
+    line-height: 0.9;
+    padding: 4pt 8pt 0 0;
+    color: ${accent2};
+  }
+
+  /* ─── FOOTER ─── */
+  .doc-footer {
+    margin-top: 60pt;
+    padding-top: 24pt;
+    border-top: 1pt solid #ddd;
+    text-align: center;
+    font-size: 8pt;
+    color: #999;
+    letter-spacing: 2pt;
+    text-transform: uppercase;
+  }
+  .doc-footer .brand {
+    color: ${accent2};
+    font-weight: 700;
+  }
+
+  /* Print optimizations */
+  @media print {
+    .cover { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .toc-page { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
 </style></head>
 <body>
+
+  <!-- COVER PAGE -->
   <div class="cover">
-    <div style="font-size: 11pt; color:${accent}; letter-spacing:3pt; text-transform:uppercase; margin-bottom:24pt;">Business Plan</div>
-    <h1>${plan.meta.biz}</h1>
-    <div class="sub">${plan.meta.ind} · ${plan.meta.loc}</div>
-    <div class="meta">Prepared for ${plan.meta.founderName}<br/>${new Date(plan.meta.generatedAt).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</div>
-    <div class="by">Built with Founder's Cabinet</div>
+    <div class="cover-inner">
+      <div class="cover-header">
+        <span class="pill">Strategic Business Plan</span>
+      </div>
+      <div class="cover-title-block">
+        <div class="cover-eyebrow">Confidential · ${new Date(plan.meta.generatedAt).getFullYear()}</div>
+        <div class="cover-title">${plan.meta.biz}</div>
+        ${tagline ? `<div class="cover-tagline">"${tagline}"</div>` : `<div class="cover-tagline">${plan.meta.ind} · ${plan.meta.loc}</div>`}
+        <div class="cover-divider"></div>
+        <div class="cover-meta">
+          <div><strong>Prepared for</strong> &nbsp;·&nbsp; ${plan.meta.founderName}</div>
+          <div><strong>Industry</strong> &nbsp;·&nbsp; ${plan.meta.ind}</div>
+          <div><strong>Location</strong> &nbsp;·&nbsp; ${plan.meta.loc}</div>
+          <div><strong>Date</strong> &nbsp;·&nbsp; ${new Date(plan.meta.generatedAt).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</div>
+        </div>
+      </div>
+      <div class="cover-footer">
+        <span>Eight Section Strategic Document</span>
+        <span class="logo">Founder's Cabinet</span>
+      </div>
+    </div>
   </div>
 
-  <div class="section"><h2>Executive Summary</h2>${plan.summary.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
-  <div class="section"><h2>Market Opportunity</h2>${plan.market.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
-  <div class="section"><h2>Ideal Customer Profile</h2>${plan.customer.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
-  <div class="section"><h2>Pricing & Revenue Model</h2>${plan.pricing.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
-  <div class="section"><h2>Marketing Strategy</h2>${plan.marketing.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
-  <div class="section"><h2>90-Day Action Plan</h2>${plan.actionPlan.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
-  <div class="section"><h2>Financial Projections</h2>${plan.financials.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
-  <div class="section"><h2>Risks & Mitigations</h2>${plan.risks.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+  <!-- TABLE OF CONTENTS -->
+  <div class="toc-page">
+    <div class="toc-eyebrow">Inside this document</div>
+    <div class="toc-title">Your Roadmap</div>
+    <div class="toc-sub">A strategic plan tailored to ${plan.meta.biz}</div>
+    <div class="toc-divider"></div>
 
-  <div class="footer">${plan.meta.biz} — Business Plan · Generated ${new Date(plan.meta.generatedAt).toLocaleDateString()} · Founder's Cabinet</div>
+    <div class="toc-item">
+      <span class="num">01</span><span class="title">Executive Summary</span><span class="pg">PAGE 3</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">02</span><span class="title">Market Opportunity</span><span class="pg">PAGE 4</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">03</span><span class="title">Ideal Customer Profile</span><span class="pg">PAGE 5</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">04</span><span class="title">Pricing & Revenue Model</span><span class="pg">PAGE 6</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">05</span><span class="title">Marketing Strategy</span><span class="pg">PAGE 7</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">06</span><span class="title">90-Day Action Plan</span><span class="pg">PAGE 8</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">07</span><span class="title">Financial Projections</span><span class="pg">PAGE 9</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">08</span><span class="title">Risks & Mitigations</span><span class="pg">PAGE 10</span>
+    </div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content">
+
+    <div class="section">
+      <div class="section-header"><div class="section-num">Section 01</div><div class="section-title">Executive Summary</div></div>
+      <div class="section-body">${plan.summary.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-header"><div class="section-num">Section 02</div><div class="section-title">Market Opportunity</div></div>
+      <div class="section-body">${plan.market.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-header"><div class="section-num">Section 03</div><div class="section-title">Ideal Customer Profile</div></div>
+      <div class="section-body">${plan.customer.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-header"><div class="section-num">Section 04</div><div class="section-title">Pricing &amp; Revenue Model</div></div>
+      <div class="section-body">${plan.pricing.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-header"><div class="section-num">Section 05</div><div class="section-title">Marketing Strategy</div></div>
+      <div class="section-body">${plan.marketing.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-header"><div class="section-num">Section 06</div><div class="section-title">90-Day Action Plan</div></div>
+      <div class="section-body">${plan.actionPlan.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-header"><div class="section-num">Section 07</div><div class="section-title">Financial Projections</div></div>
+      <div class="section-body">${plan.financials.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-header"><div class="section-num">Section 08</div><div class="section-title">Risks &amp; Mitigations</div></div>
+      <div class="section-body">${plan.risks.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+    </div>
+
+    <div class="doc-footer">
+      ${plan.meta.biz} &nbsp;·&nbsp; Strategic Business Plan &nbsp;·&nbsp; ${new Date(plan.meta.generatedAt).toLocaleDateString()} &nbsp;·&nbsp; Built with <span class="brand">Founder's Cabinet</span>
+    </div>
+  </div>
+
 </body></html>`;
     const win = window.open("", "_blank");
     if (win) {
       win.document.write(html);
       win.document.close();
-      setTimeout(() => win.print(), 800);
+      setTimeout(() => win.print(), 1200);
     }
   };
 
@@ -2675,7 +3115,7 @@ Streak: Day ${streak} of showing up`;
 
     try {
       const raw = await callClaude(
-        "You are a sharp, direct business coach. You don't waste their time. You give ONE specific action, ONE leverage point, and brutal honest insight. Output ONLY in the requested format.",
+        "You are a sharp, direct business coach. You don't waste their time. You give ONE specific action, ONE leverage point, and brutal honest insight. Output ONLY in the requested format. HONESTY: never invent specific market stats. If you'd need a fake citation, skip the number. Use plain language — grade-9 reading level. Short sentences. One bold insight, not five.",
         [{ role:"user", content:`${ctx}
 
 Generate this founder's daily plan. Be SPECIFIC to ${biz} — not generic. Reference actual details. If they're early stage with no revenue, focus on getting first customer. If they have revenue, focus on the next leverage point.
@@ -4914,7 +5354,12 @@ function App() {
     const updated={...convos,[activePillar]:[...curMsgs,uMsg]};
     setConvos(updated);ss("fc_c",updated);setChatLoading(true);
     try{
-      const sys = getAdvisorSys(activePillar, profile, memory, brandKit);
+      // Pull all the cross-context the advisors need to give unified advice
+      const savedPlan = await sg("fc_business_plan");
+      const dailyPlan = await sg("fc_daily_plan");
+      const savedWork = { businessPlan: savedPlan, dailyPlan, wins, revLog };
+
+      const sys = getAdvisorSys(activePillar, profile, memory, brandKit, false, "", updated, savedWork);
 
       // Build clean message history — only string content (no vision blobs that can exceed limits)
       const msgs = updated[activePillar].map(m => ({
@@ -4938,8 +5383,8 @@ function App() {
         if (ho?.handoff && ho.handoff !== "null" && ho.handoff !== activePillar) {
           const hP = PILLARS.find(p => p.id === ho.handoff);
           if (hP) {
-            const hSys   = getAdvisorSys(ho.handoff, profile, memory, brandKit, true, ho.reason||"");
-            const hReply = await callClaude(hSys, [{ role:"user", content:`The ${pillar.role} just answered: "${txt.slice(0,200)}". Add your brief ${hP.label} perspective in 100 words max.` }], false, 1);
+            const hSys   = getAdvisorSys(ho.handoff, profile, memory, brandKit, true, ho.reason||"", r1, savedWork);
+            const hReply = await callClaude(hSys, [{ role:"user", content:`The ${pillar.role} just answered the founder's question: "${txt.slice(0,200)}". Their answer began: "${reply.slice(0,300)}…". Add your brief ${hP.label} perspective — build on or add to what was just said. 80-120 words max.` }], false, 1);
             if (hReply) {
               const hMsg = { role:"assistant", content:hReply, pillarId:ho.handoff, isHandoff:true };
               const r2   = { ...r1, [activePillar]:[...r1[activePillar], hMsg] };
