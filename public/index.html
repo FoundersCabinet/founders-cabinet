@@ -1228,7 +1228,8 @@ FORMAT RULES (prevent reading fatigue):
 - Lead each section with a one-sentence headline takeaway.
 - Short paragraphs (2-3 sentences max).
 - Use bullets for lists. Use bold sparingly — once or twice per section for the key insight.
-- Write at a grade-9 reading level. Plain words, not jargon.`;
+- Write at a grade-9 reading level. Plain words, not jargon.
+- Do NOT use markdown headers (#, ##) or horizontal rules (---). Plain paragraphs and simple dash bullets only. You may use **bold** for one key phrase per section.`;
     const sections = {};
 
     try {
@@ -1317,8 +1318,59 @@ FORMAT RULES (prevent reading fatigue):
     const subtleGray = "#f7f5f0";
     const tagline    = brandKit?.tagline || "";
 
+    // ── Smart cover title: short business names get the big treatment;
+    //    long descriptions get scaled down + the description moves to the tagline slot ──
+    const rawBiz = (plan.meta.biz || "Business Plan").trim();
+    const isLongTitle = rawBiz.length > 50;
+    const coverTitle  = isLongTitle ? (profile?.businessName || "Your Business Plan") : rawBiz;
+    const coverSub    = isLongTitle
+      ? rawBiz                                           // long description becomes the elegant italic subtitle
+      : (tagline || `${plan.meta.ind} · ${plan.meta.loc}`);
+    const titleSize   = coverTitle.length > 40 ? 34 : coverTitle.length > 24 ? 44 : 56;
+
+    // ── Convert AI markdown (# headers, **bold**, --- rules, bullets) to clean HTML ──
+    const mdSection = (text) => {
+      if (!text) return "";
+      let t = String(text)
+        .replace(/^\s*#{1,6}\s*(.+)$/gm, "@@H@@$1@@/H@@")     // headers → markers
+        .replace(/^\s*[-–—_*]{3,}\s*$/gm, "")                  // horizontal rules → gone
+        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")      // bold
+        .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>"); // italic
+      const lines = t.split("\n");
+      const out = [];
+      let inList = false, para = [];
+      const flushPara = () => {
+        const joined = para.join(" ").trim();
+        if (joined) out.push(`<p>${joined}</p>`);
+        para = [];
+      };
+      for (const lineRaw of lines) {
+        const line = lineRaw.trim();
+        const bullet = line.match(/^[•\-\*]\s+(.+)$/);
+        const header = line.match(/^@@H@@(.+)@@\/H@@$/);
+        if (header) {
+          flushPara();
+          if (inList) { out.push("</ul>"); inList = false; }
+          out.push(`<h3 class="sub-h">${header[1].trim()}</h3>`);
+        } else if (bullet) {
+          flushPara();
+          if (!inList) { out.push('<ul class="pdf-list">'); inList = true; }
+          out.push(`<li>${bullet[1].trim()}</li>`);
+        } else if (line === "") {
+          flushPara();
+          if (inList) { out.push("</ul>"); inList = false; }
+        } else {
+          if (inList) { out.push("</ul>"); inList = false; }
+          para.push(line);
+        }
+      }
+      flushPara();
+      if (inList) out.push("</ul>");
+      return out.join("\n");
+    };
+
     const html = `<!DOCTYPE html>
-<html><head><title>${plan.meta.biz} — Business Plan</title>
+<html><head><title>${coverTitle} — Business Plan</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&family=Playfair+Display:wght@400;700;900&display=swap" rel="stylesheet"/>
@@ -1386,7 +1438,7 @@ FORMAT RULES (prevent reading fatigue):
   }
   .cover-title {
     font-family: 'Playfair Display', Georgia, serif;
-    font-size: 56pt;
+    font-size: ${titleSize}pt;
     font-weight: 900;
     line-height: 0.95;
     letter-spacing: -1pt;
@@ -1542,6 +1594,16 @@ FORMAT RULES (prevent reading fatigue):
     line-height: 1.7;
     color: #2a2a2a;
   }
+  .sub-h {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12pt;
+    font-weight: 700;
+    color: ${darkBg};
+    margin: 18pt 0 8pt;
+    letter-spacing: 0.3pt;
+  }
+  .pdf-list { margin: 0 0 14pt 16pt; }
+  .pdf-list li { font-size: 11pt; line-height: 1.65; color: #2a2a2a; margin-bottom: 6pt; }
   .section-body p:first-of-type::first-letter {
     font-family: 'Playfair Display', Georgia, serif;
     font-size: 44pt;
@@ -1584,8 +1646,8 @@ FORMAT RULES (prevent reading fatigue):
       </div>
       <div class="cover-title-block">
         <div class="cover-eyebrow">Confidential · ${new Date(plan.meta.generatedAt).getFullYear()}</div>
-        <div class="cover-title">${plan.meta.biz}</div>
-        ${tagline ? `<div class="cover-tagline">"${tagline}"</div>` : `<div class="cover-tagline">${plan.meta.ind} · ${plan.meta.loc}</div>`}
+        <div class="cover-title">${coverTitle}</div>
+        <div class="cover-tagline">${coverSub}</div>
         <div class="cover-divider"></div>
         <div class="cover-meta">
           <div><strong>Prepared for</strong> &nbsp;·&nbsp; ${plan.meta.founderName}</div>
@@ -1605,7 +1667,7 @@ FORMAT RULES (prevent reading fatigue):
   <div class="toc-page">
     <div class="toc-eyebrow">Inside this document</div>
     <div class="toc-title">Your Roadmap</div>
-    <div class="toc-sub">A strategic plan tailored to ${plan.meta.biz}</div>
+    <div class="toc-sub">A strategic plan tailored to ${coverTitle}</div>
     <div class="toc-divider"></div>
 
     <div class="toc-item">
@@ -1639,46 +1701,46 @@ FORMAT RULES (prevent reading fatigue):
 
     <div class="section">
       <div class="section-header"><div class="section-num">Section 01</div><div class="section-title">Executive Summary</div></div>
-      <div class="section-body">${plan.summary.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+      <div class="section-body">${mdSection(plan.summary)}</div>
     </div>
 
     <div class="section">
       <div class="section-header"><div class="section-num">Section 02</div><div class="section-title">Market Opportunity</div></div>
-      <div class="section-body">${plan.market.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+      <div class="section-body">${mdSection(plan.market)}</div>
     </div>
 
     <div class="section">
       <div class="section-header"><div class="section-num">Section 03</div><div class="section-title">Ideal Customer Profile</div></div>
-      <div class="section-body">${plan.customer.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+      <div class="section-body">${mdSection(plan.customer)}</div>
     </div>
 
     <div class="section">
       <div class="section-header"><div class="section-num">Section 04</div><div class="section-title">Pricing &amp; Revenue Model</div></div>
-      <div class="section-body">${plan.pricing.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+      <div class="section-body">${mdSection(plan.pricing)}</div>
     </div>
 
     <div class="section">
       <div class="section-header"><div class="section-num">Section 05</div><div class="section-title">Marketing Strategy</div></div>
-      <div class="section-body">${plan.marketing.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+      <div class="section-body">${mdSection(plan.marketing)}</div>
     </div>
 
     <div class="section">
       <div class="section-header"><div class="section-num">Section 06</div><div class="section-title">90-Day Action Plan</div></div>
-      <div class="section-body">${plan.actionPlan.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+      <div class="section-body">${mdSection(plan.actionPlan)}</div>
     </div>
 
     <div class="section">
       <div class="section-header"><div class="section-num">Section 07</div><div class="section-title">Financial Projections</div></div>
-      <div class="section-body">${plan.financials.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+      <div class="section-body">${mdSection(plan.financials)}</div>
     </div>
 
     <div class="section">
       <div class="section-header"><div class="section-num">Section 08</div><div class="section-title">Risks &amp; Mitigations</div></div>
-      <div class="section-body">${plan.risks.split("\n\n").map(p=>`<p>${p}</p>`).join("")}</div>
+      <div class="section-body">${mdSection(plan.risks)}</div>
     </div>
 
     <div class="doc-footer">
-      ${plan.meta.biz} &nbsp;·&nbsp; Strategic Business Plan &nbsp;·&nbsp; ${new Date(plan.meta.generatedAt).toLocaleDateString()} &nbsp;·&nbsp; Built with <span class="brand">Founder's Cabinet</span>
+      ${coverTitle} &nbsp;·&nbsp; Strategic Business Plan &nbsp;·&nbsp; ${new Date(plan.meta.generatedAt).toLocaleDateString()} &nbsp;·&nbsp; Built with <span class="brand">Founder's Cabinet</span>
     </div>
   </div>
 
