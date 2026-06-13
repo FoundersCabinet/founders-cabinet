@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
   <meta name="theme-color" content="#060910"/>
   <title>Founder's Cabinet — Your AI Executive Team</title>
+  <link rel="manifest" href="/manifest.json"/>
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Founder's Cabinet"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&family=Playfair+Display:wght@400;700;900&display=swap" rel="stylesheet"/>
@@ -6129,6 +6135,70 @@ Output ONLY valid JSON (no markdown):
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
+
+    // ── PWA: register service worker ──
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(()=>{});
+      });
+    }
+
+    // ── PWA: smart install banner ──
+    (function() {
+      const DISMISS_KEY = 'fc_install_dismissed';
+      if (localStorage.getItem(DISMISS_KEY)) return;
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      if (isStandalone) return; // already installed
+
+      const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      let deferredPrompt = null;
+
+      function showBanner(mode) {
+        if (document.getElementById('fc-install-banner')) return;
+        const b = document.createElement('div');
+        b.id = 'fc-install-banner';
+        b.style.cssText = 'position:fixed;bottom:16px;left:16px;right:16px;max-width:420px;margin:0 auto;background:linear-gradient(135deg,#11151f,#1a1f2e);border:1px solid rgba(244,196,48,0.35);border-radius:16px;padding:16px 18px;z-index:9999;box-shadow:0 12px 40px rgba(0,0,0,0.55);font-family:"DM Sans",sans-serif;animation:fcSlideUp .4s ease;';
+        const msg = mode === 'ios'
+          ? 'Tap <strong style="color:#F4C430">Share</strong> &nbsp;→&nbsp; <strong style="color:#F4C430">Add to Home Screen</strong> to install.'
+          : 'Install Founder\'s Cabinet for one-tap access to your executive team.';
+        const btn = mode === 'ios' ? '' : '<button id="fc-install-yes" style="padding:10px 18px;border-radius:10px;border:none;background:linear-gradient(135deg,#F4C430,#FF6B35);color:#060910;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">Install App</button>';
+        b.innerHTML = '<style>@keyframes fcSlideUp{from{transform:translateY(30px);opacity:0}to{transform:translateY(0);opacity:1}}</style>'
+          + '<div style="display:flex;align-items:center;gap:12px;">'
+          + '<img src="/icons/icon-192.png" style="width:42px;height:42px;border-radius:10px;flex-shrink:0;" alt=""/>'
+          + '<div style="flex:1;font-size:13px;color:rgba(255,255,255,0.85);line-height:1.5;">' + msg + '</div>'
+          + '</div>'
+          + '<div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;">'
+          + '<button id="fc-install-no" style="padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:rgba(255,255,255,0.55);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">Not now</button>'
+          + btn
+          + '</div>';
+        document.body.appendChild(b);
+        document.getElementById('fc-install-no').onclick = () => {
+          localStorage.setItem(DISMISS_KEY, '1');
+          b.remove();
+        };
+        const yes = document.getElementById('fc-install-yes');
+        if (yes) yes.onclick = async () => {
+          if (deferredPrompt) {
+            deferredPrompt.prompt();
+            await deferredPrompt.userChoice;
+            deferredPrompt = null;
+          }
+          b.remove();
+        };
+      }
+
+      if (isIOS) {
+        // iOS has no install API — show instructions after they've engaged (45s)
+        setTimeout(() => showBanner('ios'), 45000);
+      } else {
+        window.addEventListener('beforeinstallprompt', (e) => {
+          e.preventDefault();
+          deferredPrompt = e;
+          // Show after 30s of engagement, not instantly (less annoying)
+          setTimeout(() => showBanner('android'), 30000);
+        });
+      }
+    })();
   </script>
 </body>
 </html>
