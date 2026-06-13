@@ -44,8 +44,34 @@
     const { useState, useEffect, useRef, useCallback } = React;
 
 // ─── Storage ────────────────────────────────────────────────────────────────
-async function sg(key) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; } }
-async function ss(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
+// ─── WORKSPACES: multiple businesses per device ────────────────────────────
+// Workspace "default" uses legacy un-prefixed keys → existing users' data just works.
+// New workspaces namespace every key (ws_<id>__fc_p etc).
+const WS_LIST_KEY   = "fc_ws_list";    // [{id, name, createdAt}]
+const WS_ACTIVE_KEY = "fc_ws_active";  // current workspace id
+
+function wsActive() { try { return localStorage.getItem(WS_ACTIVE_KEY) || "default"; } catch { return "default"; } }
+function wsKey(key) { const ws = wsActive(); return ws === "default" ? key : `ws_${ws}__${key}`; }
+function wsList() {
+  try { const v = localStorage.getItem(WS_LIST_KEY); return v ? JSON.parse(v) : [{ id:"default", name:"My Business", createdAt: Date.now() }]; }
+  catch { return [{ id:"default", name:"My Business", createdAt: Date.now() }]; }
+}
+function wsSaveList(list) { try { localStorage.setItem(WS_LIST_KEY, JSON.stringify(list)); } catch {} }
+function wsSwitch(id) { try { localStorage.setItem(WS_ACTIVE_KEY, id); location.reload(); } catch {} }
+function wsCreate() {
+  const id = "b" + Date.now().toString(36);
+  const list = wsList();
+  list.push({ id, name: "New Business", createdAt: Date.now() });
+  wsSaveList(list);
+  wsSwitch(id); // reloads → fresh onboarding in the new namespace
+}
+function wsRename(id, name) {
+  const list = wsList().map(w => w.id === id ? { ...w, name } : w);
+  wsSaveList(list);
+}
+
+async function sg(key) { try { const v = localStorage.getItem(wsKey(key)); return v ? JSON.parse(v) : null; } catch { return null; } }
+async function ss(key, val) { try { localStorage.setItem(wsKey(key), JSON.stringify(val)); } catch {} }
 
 // ─── Time ────────────────────────────────────────────────────────────────────
 const NOW        = new Date();
@@ -5284,6 +5310,7 @@ function App() {
   const [chatLoading,setChatLoading]=useState(false);
   const [handoffLoading,setHandoffLoading]=useState(false);
   const [notif,setNotif]=useState("");
+  const [wsOpen,setWsOpen]=useState(false);
   const [brief,setBrief]=useState("");
   const [briefLoading,setBriefLoading]=useState(false);
   // Creative
@@ -5377,7 +5404,13 @@ function App() {
 
   const toast=(msg,dur=2500)=>{setNotif(msg);setTimeout(()=>setNotif(""),dur);};
   const saveFin=d=>{setFinData(d);ss("fc_fin",d);};
-  const handleProfile=async p=>{setProfile(p);await ss("fc_p",p);setView("home");genBrief(p,memory);};
+  const handleProfile=async p=>{
+    setProfile(p);await ss("fc_p",p);
+    // Name this workspace after the business so the switcher reads naturally
+    const wsName = (p?.businessName || p?.ideaDescription || "My Business").slice(0, 38);
+    wsRename(wsActive(), wsName);
+    setView("home");genBrief(p,memory);
+  };
   const saveBrandKit=async bk=>{setBrandKit(bk);await ss("fc_brand",bk);toast("✨ Brand kit saved!");};
 
   const logRev=()=>{
@@ -5599,6 +5632,32 @@ Output ONLY valid JSON (no markdown):
               <span style={{marginRight:4}}>{n.icon}</span>{n.label}
             </button>
           ))}
+        </div>
+        {/* Business switcher */}
+        <div style={{position:"relative",flexShrink:0}}>
+          <button onClick={()=>setWsOpen(o=>!o)} style={{padding:"6px 11px",borderRadius:8,background:"rgba(244,196,48,0.07)",border:"1px solid rgba(244,196,48,0.22)",color:"rgba(255,255,255,0.85)",cursor:"pointer",fontSize:11,fontWeight:600,display:"flex",alignItems:"center",gap:6,maxWidth:160,fontFamily:"'DM Sans',sans-serif"}}>
+            <span style={{fontSize:11}}>🏢</span>
+            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(wsList().find(w=>w.id===wsActive())?.name)||"My Business"}</span>
+            <span style={{fontSize:8,color:"rgba(255,255,255,0.4)",transform:wsOpen?"rotate(180deg)":"none",transition:"transform .2s"}}>▼</span>
+          </button>
+          {wsOpen&&(
+            <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,minWidth:220,background:"rgba(13,17,28,0.99)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,padding:6,zIndex:100,boxShadow:"0 16px 48px rgba(0,0,0,0.6)"}}>
+              <div style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:"rgba(255,255,255,0.35)",padding:"8px 10px 6px",fontWeight:700}}>Your Businesses</div>
+              {wsList().map(w=>(
+                <button key={w.id} onClick={()=>{if(w.id!==wsActive())wsSwitch(w.id);else setWsOpen(false);}} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"9px 10px",borderRadius:8,border:"none",background:w.id===wsActive()?"rgba(244,196,48,0.1)":"transparent",color:w.id===wsActive()?"#F4C430":"rgba(255,255,255,0.75)",cursor:"pointer",fontSize:12,fontWeight:w.id===wsActive()?700:500,textAlign:"left",fontFamily:"'DM Sans',sans-serif"}}
+                  onMouseEnter={e=>{if(w.id!==wsActive())e.currentTarget.style.background="rgba(255,255,255,0.05)";}}
+                  onMouseLeave={e=>{if(w.id!==wsActive())e.currentTarget.style.background="transparent";}}>
+                  <span style={{width:6,height:6,borderRadius:"50%",background:w.id===wsActive()?"#F4C430":"rgba(255,255,255,0.2)",flexShrink:0}}/>
+                  <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{w.name}</span>
+                  {w.id===wsActive()&&<span style={{fontSize:9,color:"rgba(244,196,48,0.6)"}}>✓</span>}
+                </button>
+              ))}
+              <div style={{height:1,background:"rgba(255,255,255,0.07)",margin:"6px 4px"}}/>
+              <button onClick={()=>{setWsOpen(false);wsCreate();}} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"9px 10px",borderRadius:8,border:"1px dashed rgba(244,196,48,0.35)",background:"rgba(244,196,48,0.04)",color:"#F4C430",cursor:"pointer",fontSize:12,fontWeight:700,textAlign:"left",fontFamily:"'DM Sans',sans-serif"}}>
+                <span style={{fontSize:13}}>＋</span> New Business
+              </button>
+            </div>
+          )}
         </div>
         <button onClick={()=>setView("profile")} style={{padding:"6px 9px",borderRadius:8,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:12,flexShrink:0}}>⚙</button>
       </div>
@@ -6148,7 +6207,7 @@ Output ONLY valid JSON (no markdown):
       const DISMISS_KEY = 'fc_install_dismissed';
       if (localStorage.getItem(DISMISS_KEY)) return;
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-      if (isStandalone) return; // already installed
+      if (isStandalone) return;
 
       const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
       let deferredPrompt = null;
@@ -6188,13 +6247,11 @@ Output ONLY valid JSON (no markdown):
       }
 
       if (isIOS) {
-        // iOS has no install API — show instructions after they've engaged (45s)
         setTimeout(() => showBanner('ios'), 45000);
       } else {
         window.addEventListener('beforeinstallprompt', (e) => {
           e.preventDefault();
           deferredPrompt = e;
-          // Show after 30s of engagement, not instantly (less annoying)
           setTimeout(() => showBanner('android'), 30000);
         });
       }
