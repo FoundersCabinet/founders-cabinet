@@ -1919,8 +1919,10 @@ function SocialPostsSection({ profile, brandKit }) {
   const generatePosts = async () => {
     setGenerating(true);
     setError(null);
-    setProgress(0);
+    setProgress(2);
     setPosts([]);
+    // Smooth ticking progress so it never looks frozen during long AI calls
+    const tick = setInterval(() => setProgress(p => (p < 88 ? p + 1 : p)), 1400);
 
     const ctx = `Business: ${biz}
 Industry: ${ind}
@@ -1944,7 +1946,7 @@ Tagline: ${tagline}`;
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
         setProgressLabel(`Generating ${batch.week}...`);
-        setProgress(Math.round((i / batches.length) * 90));
+        setProgress(p => Math.max(p, Math.round((i / batches.length) * 90)));
 
         const raw = await callClaude(sys,
           [{ role:"user", content:
@@ -1992,12 +1994,14 @@ Vary platforms across instagram, tiktok, facebook, linkedin. Vary types: educati
         }
       }
 
+      clearInterval(tick);
       setProgress(100);
       setProgressLabel("Done!");
       ss("fc_social_posts", allPosts);
       setPosts(allPosts);
       setTimeout(() => setGenerating(false), 600);
     } catch(e) {
+      clearInterval(tick);
       console.error("Social posts error:", e);
       setError("Couldn't generate posts. Please try again.");
       setGenerating(false);
@@ -2020,72 +2024,122 @@ Vary platforms across instagram, tiktok, facebook, linkedin. Vary types: educati
       canvas.width = w; canvas.height = h;
       const ctx = canvas.getContext("2d");
 
-      // Background gradient using brand color
+      const accent  = primary;
+      const accent2 = brandKit?.secondaryColor || "#FF6B35";
+      const bizShort = shortBizName(profile);
+      const isPortrait = h > w * 1.2;
+      const isWide = w > h * 1.4;
+      const padding = w * 0.09;
+
+      // ── Premium dark background ──
       const grad = ctx.createLinearGradient(0, 0, w, h);
-      grad.addColorStop(0, primary);
-      grad.addColorStop(1, shadeColor(primary, -40));
+      grad.addColorStop(0, "#0b0f1c");
+      grad.addColorStop(1, "#181d2e");
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
 
-      // Decorative circle
-      ctx.fillStyle = "rgba(255,255,255,0.08)";
-      ctx.beginPath();
-      ctx.arc(w * 0.85, h * 0.15, w * 0.25, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(w * 0.1, h * 0.85, w * 0.18, 0, Math.PI * 2);
-      ctx.fill();
+      // ── Soft brand-color glows ──
+      const glow1 = ctx.createRadialGradient(w*0.88, h*0.1, 0, w*0.88, h*0.1, w*0.45);
+      glow1.addColorStop(0, hexAlpha(accent, 0.22));
+      glow1.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = glow1;
+      ctx.fillRect(0, 0, w, h);
 
-      // Hook text - large, bold, centered
-      const isPortrait = h > w;
-      const padding = w * 0.08;
-      const maxTextWidth = w - padding * 2;
-      const fontSize = isPortrait ? w * 0.07 : w * 0.05;
+      const glow2 = ctx.createRadialGradient(w*0.08, h*0.94, 0, w*0.08, h*0.94, w*0.38);
+      glow2.addColorStop(0, hexAlpha(accent2, 0.16));
+      glow2.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = glow2;
+      ctx.fillRect(0, 0, w, h);
 
-      ctx.fillStyle = "#ffffff";
-      ctx.font = `900 ${fontSize}px Georgia, serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-
-      // Word wrap
-      const words = post.hook.split(" ");
-      const lines = [];
-      let currentLine = "";
-      for (const word of words) {
-        const testLine = currentLine ? currentLine + " " + word : word;
-        if (ctx.measureText(testLine).width > maxTextWidth && currentLine) {
-          lines.push(currentLine);
-          currentLine = word;
-        } else {
-          currentLine = testLine;
-        }
-      }
-      if (currentLine) lines.push(currentLine);
-
-      const lineHeight = fontSize * 1.2;
-      const totalTextHeight = lines.length * lineHeight;
-      const startY = (h - totalTextHeight) / 2;
-
-      lines.forEach((line, i) => {
-        ctx.fillText(line, w / 2, startY + i * lineHeight + lineHeight / 2);
-      });
-
-      // Tagline at bottom
-      if (tagline) {
-        ctx.font = `400 ${w * 0.022}px sans-serif`;
-        ctx.fillStyle = "rgba(255,255,255,0.85)";
-        ctx.fillText(tagline, w / 2, h - padding);
-      }
-
-      // Business name top
-      ctx.font = `600 ${w * 0.025}px sans-serif`;
-      ctx.fillStyle = "rgba(255,255,255,0.7)";
+      // ── Top: business name in brand color, small caps, with accent bar ──
+      const nameSize = Math.max(22, Math.floor(w * 0.024));
       ctx.textAlign = "left";
-      ctx.fillText(biz, padding, padding + w * 0.025);
+      ctx.textBaseline = "alphabetic";
+      ctx.font = `700 ${nameSize}px Georgia, serif`;
+      ctx.fillStyle = accent;
+      try { ctx.letterSpacing = `${Math.floor(nameSize*0.18)}px`; } catch {}
+      ctx.fillText(bizShort.toUpperCase(), padding, padding + nameSize);
+      try { ctx.letterSpacing = "0px"; } catch {}
+      // accent underline bar
+      const barGrad = ctx.createLinearGradient(padding, 0, padding + w*0.1, 0);
+      barGrad.addColorStop(0, accent);
+      barGrad.addColorStop(1, accent2);
+      ctx.fillStyle = barGrad;
+      ctx.fillRect(padding, padding + nameSize + Math.floor(h*0.014), w*0.085, Math.max(4, Math.floor(h*0.006)));
 
-      // Download as PNG
+      // ── Hook: large white serif, wrapped, auto-shrinks to fit ──
+      const maxTextWidth = w - padding * 2;
+      let fontSize = isPortrait ? w * 0.075 : isWide ? w * 0.052 : w * 0.064;
+      let lines = [];
+      const wrap = (fs) => {
+        ctx.font = `900 ${fs}px Georgia, serif`;
+        const words = post.hook.split(" ");
+        const out = [];
+        let cur = "";
+        for (const word of words) {
+          const test = cur ? cur + " " + word : word;
+          if (ctx.measureText(test).width > maxTextWidth && cur) { out.push(cur); cur = word; }
+          else cur = test;
+        }
+        if (cur) out.push(cur);
+        return out;
+      };
+      lines = wrap(fontSize);
+      const maxLines = isPortrait ? 6 : 4;
+      while (lines.length > maxLines && fontSize > w * 0.034) {
+        fontSize *= 0.92;
+        lines = wrap(fontSize);
+      }
+
+      const lineHeight = fontSize * 1.22;
+      const blockH = lines.length * lineHeight;
+      const hookTop = (h - blockH) / 2 - (isPortrait ? h*0.02 : h*0.015);
+
+      // small accent tick above the hook
+      ctx.fillStyle = accent;
+      ctx.fillRect(padding, hookTop - Math.floor(h*0.035), w*0.045, Math.max(3, Math.floor(h*0.005)));
+
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.font = `900 ${fontSize}px Georgia, serif`;
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowColor = "rgba(0,0,0,0.35)";
+      ctx.shadowBlur = Math.floor(w*0.012);
+      ctx.shadowOffsetY = 3;
+      lines.forEach((line, i) => {
+        ctx.fillText(line, padding, hookTop + i * lineHeight + lineHeight / 2);
+      });
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+
+      // ── Bottom bar: divider + tagline/CTA left, day badge right ──
+      const footY = h - padding * (isWide ? 0.85 : 1.0);
+      ctx.strokeStyle = "rgba(255,255,255,0.14)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(padding, footY - Math.floor(h*0.05));
+      ctx.lineTo(w - padding, footY - Math.floor(h*0.05));
+      ctx.stroke();
+
+      const footText = (tagline || post.cta || "").slice(0, 70);
+      if (footText) {
+        ctx.font = `400 ${Math.max(18, Math.floor(w*0.02))}px Arial, sans-serif`;
+        ctx.fillStyle = "rgba(255,255,255,0.65)";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillText(footText, padding, footY);
+      }
+      // Day badge — right aligned, brand color
+      ctx.font = `700 ${Math.max(18, Math.floor(w*0.02))}px Arial, sans-serif`;
+      ctx.fillStyle = accent;
+      ctx.textAlign = "right";
+      ctx.fillText(`DAY ${post.dayNumber} / 30`, w - padding, footY);
+
+      // ── Download — clean filename from the short name ──
       const link = document.createElement("a");
-      link.download = `${biz.replace(/[^a-z0-9]/gi,"_").toLowerCase()}_${post.platform}_day${post.dayNumber}.png`;
+      const safeName = bizShort.replace(/[^a-z0-9]+/gi,"-").replace(/^-+|-+$/g,"").toLowerCase() || "post";
+      link.download = `${safeName}-${post.platform}-day${post.dayNumber}.png`;
       link.href = canvas.toDataURL("image/png");
       link.click();
     } catch(e) {
@@ -2215,6 +2269,27 @@ function shadeColor(hex, percent) {
   return "#" + ((1<<24) + (r<<16) + (g<<8) + b).toString(16).slice(1);
 }
 
+// Hex color → rgba() string with alpha
+function hexAlpha(hex, alpha) {
+  try {
+    const num = parseInt(hex.replace("#",""),16);
+    return `rgba(${(num>>16)&0xff},${(num>>8)&0xff},${num&0xff},${alpha})`;
+  } catch { return `rgba(244,196,48,${alpha})`; }
+}
+
+// Smart short business name — never a truncated sentence
+function shortBizName(profile) {
+  const bn = profile?.businessName?.trim();
+  if (bn) return bn.slice(0, 30);
+  let d = (profile?.ideaDescription || "Your Business").trim();
+  d = d.replace(/^(a|an|the|my|our)\s+/i, "");
+  const stop = d.search(/\b(based|that|which|located|in|for|who|serving|helping|offering)\b/i);
+  if (stop > 4) d = d.slice(0, stop);
+  d = d.split(/\s+/).slice(0, 4).join(" ").replace(/[.,;:!?]+$/, "").trim();
+  d = d.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1));
+  return (d || "Your Business").slice(0, 30);
+}
+
 // ─── COLD OUTREACH — 50 Ready-to-Send Messages ─────────────────────────────
 function OutreachSection({ profile, brandKit }) {
   const [generating, setGenerating] = useState(false);
@@ -2240,7 +2315,8 @@ function OutreachSection({ profile, brandKit }) {
   const generateOutreach = async () => {
     setGenerating(true);
     setError(null);
-    setProgress(0);
+    setProgress(2);
+    const tick = setInterval(() => setProgress(p => (p < 88 ? p + 1 : p)), 1400);
 
     const ctx = `Business: ${biz}
 Industry: ${ind}
@@ -2256,7 +2332,7 @@ ${tagline ? `Tagline: ${tagline}` : ""}`;
     try {
       // ── 1. Cold Emails (15 messages) ──
       setProgressLabel("Writing cold emails...");
-      setProgress(15);
+      setProgress(p => Math.max(p, 15));
       const emailRaw = await callClaude(sys,
         [{role:"user",content:`${ctx}
 
@@ -2278,7 +2354,7 @@ Make each email feel hand-written, not templated. Reference specific details abo
 
       // ── 2. Instagram DMs (15 messages) ──
       setProgressLabel("Writing Instagram DMs...");
-      setProgress(40);
+      setProgress(p => Math.max(p, 40));
       const dmRaw = await callClaude(sys,
         [{role:"user",content:`${ctx}
 
@@ -2299,7 +2375,7 @@ Match Instagram tone — casual, no formal greetings, can use emojis sparingly.`
 
       // ── 3. LinkedIn Messages (10 messages) ──
       setProgressLabel("Writing LinkedIn messages...");
-      setProgress(65);
+      setProgress(p => Math.max(p, 65));
       const linkedinRaw = await callClaude(sys,
         [{role:"user",content:`${ctx}
 
@@ -2321,7 +2397,7 @@ LinkedIn is professional but not stiff. Be specific about why you're reaching ou
 
       // ── 4. Follow-up Sequence (10 messages) ──
       setProgressLabel("Writing follow-up sequences...");
-      setProgress(85);
+      setProgress(p => Math.max(p, 85));
       const followupRaw = await callClaude(sys,
         [{role:"user",content:`${ctx}
 
@@ -2342,7 +2418,7 @@ FOLLOW UP 2
 Each follow-up should add value, not just nag. Think "did you see this?" not "still waiting".`}],
         false, 1, 1800);
 
-      setProgress(95);
+      setProgress(p => Math.max(p, 95));
       setProgressLabel("Compiling your outreach kit...");
 
       // Parse all four
@@ -2352,11 +2428,13 @@ Each follow-up should add value, not just nag. Think "did you see this?" not "st
       result.followups = parseBlock(followupRaw, "FOLLOW UP", ["CHANNEL","TIMING","SUBJECT","MESSAGE","ANGLE"]);
       result.generatedAt = new Date().toISOString();
 
+      clearInterval(tick);
       ss("fc_outreach", result);
       setOutreach(result);
       setProgress(100);
       setTimeout(() => setGenerating(false), 600);
     } catch(e) {
+      clearInterval(tick);
       console.error("Outreach error:", e);
       setError("Couldn't generate outreach kit. Please try again.");
       setGenerating(false);
@@ -2593,7 +2671,8 @@ function SalesToolkitSection({ profile, brandKit }) {
   const generateToolkit = async () => {
     setGenerating(true);
     setError(null);
-    setProgress(0);
+    setProgress(2);
+    const tick = setInterval(() => setProgress(p => (p < 88 ? p + 1 : p)), 1400);
 
     const ctx = `Business: ${biz}
 Industry: ${ind}
@@ -2608,7 +2687,7 @@ Founder: ${ownerName}`;
     try {
       // ── 1. Discovery call script ──
       setProgressLabel("Writing discovery call script...");
-      setProgress(15);
+      setProgress(p => Math.max(p, 15));
       const discoveryRaw = await callClaude(sys,
         [{role:"user",content:`${ctx}
 
@@ -2632,7 +2711,7 @@ CLOSE: [exactly how to end the call and set next steps]`}],
 
       // ── 2. Objection handlers ──
       setProgressLabel("Building objection handlers...");
-      setProgress(35);
+      setProgress(p => Math.max(p, 35));
       const objectionRaw = await callClaude(sys,
         [{role:"user",content:`${ctx}
 
@@ -2653,7 +2732,7 @@ OBJECTION 2
 
       // ── 3. Proposal template ──
       setProgressLabel("Building proposal template...");
-      setProgress(55);
+      setProgress(p => Math.max(p, 55));
       const proposalRaw = await callClaude(sys,
         [{role:"user",content:`${ctx}
 
@@ -2675,7 +2754,7 @@ PS: [a personal P.S. that creates urgency or reinforces value]`}],
 
       // ── 4. Service agreement / contract ──
       setProgressLabel("Drafting service agreement...");
-      setProgress(75);
+      setProgress(p => Math.max(p, 75));
       const contractRaw = await callClaude(sys,
         [{role:"user",content:`${ctx}
 
@@ -2700,7 +2779,7 @@ DISCLAIMER: [Note: This is a template. Get it reviewed by a lawyer before using 
 
       // ── 5. Closing scripts ──
       setProgressLabel("Writing closing scripts...");
-      setProgress(92);
+      setProgress(p => Math.max(p, 92));
       const closingRaw = await callClaude(sys,
         [{role:"user",content:`${ctx}
 
@@ -2718,7 +2797,7 @@ CLOSE 2
 (all 6, covering: assumptive close, soft close, urgency close, alternative close, summary close, takeaway close)`}],
         false, 1, 1500);
 
-      setProgress(98);
+      setProgress(p => Math.max(p, 98));
       setProgressLabel("Compiling your sales toolkit...");
 
       result.discovery  = parseToolkitBlock(discoveryRaw, "QUESTION", ["ASK","WHY","LISTEN_FOR"], { opening: extractField(discoveryRaw, "OPENING"), closing: extractField(discoveryRaw, "CLOSE") });
@@ -2749,11 +2828,13 @@ CLOSE 2
       result.closes     = parseToolkitBlock(closingRaw, "CLOSE", ["SITUATION","SCRIPT","WHY_IT_WORKS"]);
       result.generatedAt = new Date().toISOString();
 
+      clearInterval(tick);
       ss("fc_sales_toolkit", result);
       setToolkit(result);
       setProgress(100);
       setTimeout(() => setGenerating(false), 600);
     } catch(e) {
+      clearInterval(tick);
       console.error("Sales toolkit error:", e);
       setError("Couldn't generate sales toolkit. Please try again.");
       setGenerating(false);
