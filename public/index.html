@@ -281,6 +281,39 @@ function buildCtx(profile, memory = [], brandKit = null) {
 }
 
 // ─── Universal honesty + formatting rules baked into every AI call ────────
+// ─── FUNDING & RESOURCES KNOWLEDGE BASE ────────────────────────────────────
+// Real programs the advisors KNOW about. Named programs are confident;
+// dollar amounts/deadlines are always hedged + pointed to official sources.
+const RESOURCE_KB = `
+FUNDING & RESOURCE KNOWLEDGE (surface these naturally ONLY when relevant — e.g. the founder is bootstrapping, asks about money/startup costs/funding, or has no budget. Never dump all of these; pick the 1-3 that fit their exact situation, stage, and region):
+
+— CANADA / ONTARIO (use for Canadian founders) —
+• Futurpreneur Canada — startup financing + mentorship for founders 18-39. Often paired with a BDC matching loan. Good for new/young founders. (Confirm current loan amounts on their official site.)
+• BDC (Business Development Bank of Canada) — small business loans, often more flexible than banks. Good once there's some traction.
+• Canada Digital Adoption Program (CDAP) — historically offered grants/loans to help small businesses go digital. NOTE: program terms change and parts have closed — tell them to verify current status on the official Canada.ca page.
+• Community Futures — regional offices across Canada offering loans + free business advising, especially for rural/smaller communities.
+• Ontario small business support — the Province of Ontario and many municipalities (incl. York Region / Vaughan) run small business enterprise centres with free advising and occasional grants. Point them to their local Small Business Enterprise Centre.
+• Women/Newcomer/Indigenous-specific — programs exist (e.g. Women Entrepreneurship Strategy, various newcomer and Indigenous business funds). Mention if the founder fits, and have them search the specific official program.
+• Grants vs loans reality check — most "free grant" hype is overstated. Be honest: grants are competitive and narrow; loans + revenue are how most bootstrappers actually fund growth.
+
+— UNITED STATES (use for US founders) —
+• SBA (Small Business Administration) — loan guarantee programs (7(a), microloans) via partner lenders. The starting point for US small business financing.
+• SCORE — free mentorship from experienced business people, nationwide.
+• Grants.gov — the official federal grants portal (note: most federal grants are for specific sectors/research, not general small business — set expectations honestly).
+• State/local — most US states and cities have economic development offices with their own small business programs. Point them to their state's office.
+
+— GLOBAL / UNIVERSAL (use when region is unknown or not deeply covered) —
+• Start by searching: "[their city/country] small business grants" + "[their country] startup loans" on the official government site.
+• Local economic development offices, chambers of commerce, and community lenders exist almost everywhere and often have free advising.
+• For founders anywhere: bootstrapping with revenue (pre-sales, deposits, starting lean) is usually faster than chasing grants.
+
+HOW TO DELIVER RESOURCES:
+- Name the PROGRAM confidently. Hedge on exact $ amounts and deadlines ("up to roughly $X — confirm current figures on their official site").
+- Don't invent URLs. Say "search '[program name]'" or "visit their official site" instead of guessing a link.
+- For anything outside the lists above, or to confirm current details, use web search and cite the official source you found.
+- Tie it to THEIR situation: "Since you're bootstrapping in Ontario and just starting, Futurpreneur is worth a look because…"
+`;
+
 const FACTUAL_RULES = `
 CRITICAL HONESTY RULES (non-negotiable):
 1. If you don't have verified, current data, label it clearly:
@@ -307,12 +340,19 @@ function getAdvisorSys(pillarId, profile, memory, brandKit, isHandoff=false, rea
   const savedSummary = buildSavedWorkSummary(savedWork);
   const isIdea = profile?.mode==="idea";
   const hasBrand = !!brandKit?.primaryColor;
+
+  // Surface the resource knowledge base whenever it could help — bootstrappers,
+  // low/no budget, pre-launch, or any advisor who might point to funding/tools.
+  const budgetStr = (profile?.budget || "").toLowerCase();
+  const lowBudget = /0|none|bootstrap|no budget|nothing|self|under|minimal|tight/.test(budgetStr) || Number(profile?.revenue||0) === 0;
+  const fundingRelevant = lowBudget || isIdea || pillarId === "finance" || pillarId === "strategy" || pillarId === "mindset";
+  const resourceBlock = fundingRelevant ? "\n" + RESOURCE_KB : "";
   const voice = {
-    strategy:  `You are the CSO (Chief Strategy Officer). Give sharp positioning, business-model, and growth-lever advice. When discussing market trends or competitor moves, web-search to ground claims in current data. If you cite a market size or competitor stat, label your confidence ("verified", "directional estimate", or "you should verify").`,
-    marketing: `You are the CMO (Chief Marketing Officer). Give platform-specific advice with realistic ranges (not invented exact numbers). When you mention CPC/CPM/conversion benchmarks, label them as "industry-range estimates — verify in your ad platform" unless you've web-searched current ${profile?.city || "local"} data. ${hasBrand?`Always incorporate their brand colors (${brandKit.primaryColor}) and voice (${brandKit.voice||"professional"}).`:""}`,
-    finance:   `You are the CFO (Chief Financial Officer). Give specific math (pricing, margins, ROI formulas) — show your work so the user can verify. For salary/tax/legal/rate benchmarks, label them as "directional — confirm with your accountant or current local data". Never invent specific statistics.`,
-    sales:     `You are the CSO (Chief Sales Officer). Give concrete scripts, frameworks, and closing techniques. Reference seasonal buying patterns when relevant. Be direct. If you reference a sales methodology, only name well-known ones (SPIN, Challenger, MEDDIC, Sandler, etc.).`,
-    mindset:   `You are the founder's mindset coach. Be warm but direct. One clear reframe + one immediate action. No fluff. No toxic positivity. No invented psychological "studies" — speak from observed founder patterns.`,
+    strategy:  `You are the CSO (Chief Strategy Officer). Your lens: positioning, business model, competitive moats, growth levers, and what to prioritize vs ignore. Proactively flag if they're competing in a crowded space, mispositioned, chasing the wrong customer, or missing an obvious wedge. Web-search current market/competitor reality when it sharpens your answer. Label market stats as "verified", "directional estimate", or "you should verify".`,
+    marketing: `You are the CMO (Chief Marketing Officer). Your lens: how this specific business gets seen and chosen by its exact customer. Proactively recommend the highest-leverage channel for THEIR situation and budget, the messaging angle that'll actually land, and free/cheap tools that fit. Flag if they're about to waste money on the wrong channel. Give realistic ranges, not invented exact numbers; label CPC/CPM/conversion figures as "industry-range estimates — verify in your ad platform" unless web-searched. ${hasBrand?`Use their brand colors (${brandKit.primaryColor}) and voice (${brandKit.voice||"professional"}).`:""}`,
+    finance:   `You are the CFO (Chief Financial Officer). Your lens: money in, money out, runway, pricing, and funding. Proactively surface what their numbers imply: if they're bootstrapping, name real funding paths (loans, grants, lean tactics) that fit their region/stage; if their pricing is too low, say so; if they're heading toward a cash problem, flag it early. Show your math so they can verify. Label salary/tax/rate benchmarks as "directional — confirm with your accountant or current local data". Never invent specific statistics.`,
+    sales:     `You are the Chief Sales Officer. Your lens: turning interest into paid deals. Proactively give the exact next move to get their first/next customer — scripts, the channel to find buyers, how to handle their likely objections, how to close. Flag if they're underpricing, over-discounting, or have no follow-up system. Only name well-known methodologies (SPIN, Challenger, MEDDIC, Sandler).`,
+    mindset:   `You are the founder's mindset coach. Your lens: clarity, momentum, and decision-making under pressure. Proactively name the real bottleneck (often fear, perfectionism, or scattered focus — not the surface problem). One clear reframe + one immediate action. Warm but direct. No toxic positivity, no invented "studies" — speak from observed founder patterns.`,
   };
 
   if (isHandoff) {
@@ -320,7 +360,7 @@ function getAdvisorSys(pillarId, profile, memory, brandKit, isHandoff=false, rea
 
 ${FACTUAL_RULES}
 
-${ctx}${crossAdvisor}${savedSummary}
+${ctx}${crossAdvisor}${savedSummary}${resourceBlock}
 
 HANDOFF REASON: ${reason}
 
@@ -331,9 +371,18 @@ Start directly with your insight. No preamble. No "As the ${p.role}...". Just th
 
   return `You are the ${p.role} at Founder's Cabinet — a world-class executive advisory firm. The founder is consulting you specifically because of your domain expertise. You speak with the other advisors regularly and you reference their work so the team gives unified, coordinated advice.
 
+HOW A REAL EXECUTIVE THINKS (this is the core of your job):
+You are NOT a search box that only answers the literal question. You are a seasoned operator who has helped hundreds of businesses like this one. A great executive does four things automatically:
+1. DIAGNOSE: Read their actual situation (stage, budget, revenue, what they've done, what other advisors flagged). Understand where they really are — not just what they typed.
+2. ANSWER what they asked — directly and specifically to THEIR business, never generic.
+3. SURFACE what they DIDN'T ask but a sharp operator would flag: a gap, a risk, a missed opportunity, a cheaper/faster way, a tool or resource that fits their exact situation. Offer it proactively, the way a real CMO/CFO would lean in and say "and one more thing you should know…".
+4. ANTICIPATE the next problem and name it, so they see around the corner.
+
+Draw on your real knowledge of how business actually works — pricing, channels, hiring, operations, funding options, growth tactics, common tools, what kills businesses at their stage. Be the expert they can't yet afford to hire. Don't wait to be asked about something obvious — if it's relevant to their situation, raise it. But stay disciplined: surface the 1-2 most valuable proactive points, not a dump of everything.
+
 ${FACTUAL_RULES}
 
-${ctx}${crossAdvisor}${savedSummary}
+${ctx}${crossAdvisor}${savedSummary}${resourceBlock}
 
 YOUR ROLE FOR THIS USER: ${isIdea ? "PRE-LAUNCH — help them validate and build their first version." : "ACTIVE BUSINESS — build on what they already have. Don't restart their thinking from zero."}
 
@@ -341,7 +390,7 @@ ${voice[pillarId]||""}
 
 When other advisors have already weighed in (see above), build on or constructively challenge their points — never contradict them randomly or pretend you didn't see them. You're one executive team, not five strangers.
 
-Max 350 words. Make every word earn its place.`;
+Max 350 words. Make every word earn its place. End with the single most important next step they should take.`;
 }
 
 // ─── Graphics ─────────────────────────────────────────────────────────────────
@@ -5556,25 +5605,56 @@ function App() {
       const r1   = { ...updated, [activePillar]:[...updated[activePillar], aMsg] };
       setConvos(r1); ss("fc_c", r1); setChatLoading(false); setHandoffLoading(true);
 
-      // Smart handoff — brief cross-department insight
+      // ── BOARDROOM: relevant advisors chime in (max 2), in sequence ──
       try {
-        const ho = await callClaudeJSON(
-          "Decide if a second advisor should briefly weigh in. Output ONLY valid JSON.",
-          `Primary:${activePillar}\nQuestion:"${txt}"\nResponse:"${reply.slice(0,250)}"\nOther advisors:${PILLARS.filter(p=>p.id!==activePillar).map(p=>p.id).join(",")}\nOutput:{"handoff":"advisor_id_or_null","reason":"one sentence or null"}`
+        const others = PILLARS.filter(p => p.id !== activePillar);
+        const roster = others.map(p => `${p.id} (${p.role})`).join(", ");
+        const decision = await callClaudeJSON(
+          "You decide which executives at a boardroom table should briefly speak up after a colleague answers. Only pick advisors who have something GENUINELY relevant and valuable to add from their domain. It's completely fine to pick zero or one — most questions only need the primary advisor plus maybe one other. Never pick more than 2. Output ONLY valid JSON.",
+          `The founder asked the ${pillar.role}: "${txt}"
+
+The ${pillar.role} answered: "${reply.slice(0, 400)}"
+
+Available advisors who could chime in: ${roster}
+
+Which (if any) should add a SHORT, relevant comment? Only include an advisor if their department genuinely relates to this specific question and they'd add real value — not just agreement.
+
+Output exactly this JSON:
+{"chime":[{"id":"advisor_id","angle":"what specifically they should address in 1 sentence"}]}
+
+If nobody else should speak, output {"chime":[]}. Max 2 entries.`
         );
-        if (ho?.handoff && ho.handoff !== "null" && ho.handoff !== activePillar) {
-          const hP = PILLARS.find(p => p.id === ho.handoff);
-          if (hP) {
-            const hSys   = getAdvisorSys(ho.handoff, profile, memory, brandKit, true, ho.reason||"", r1, savedWork);
-            const hReply = await callClaude(hSys, [{ role:"user", content:`The ${pillar.role} just answered the founder's question: "${txt.slice(0,200)}". Their answer began: "${reply.slice(0,300)}…". Add your brief ${hP.label} perspective — build on or add to what was just said. 80-120 words max.` }], false, 1);
-            if (hReply) {
-              const hMsg = { role:"assistant", content:hReply, pillarId:ho.handoff, isHandoff:true };
-              const r2   = { ...r1, [activePillar]:[...r1[activePillar], hMsg] };
-              setConvos(r2); ss("fc_c", r2);
-            }
+
+        const chimers = Array.isArray(decision?.chime) ? decision.chime.slice(0, 2) : [];
+        let running = r1;
+
+        for (const c of chimers) {
+          if (!c?.id || c.id === activePillar) continue;
+          const cP = PILLARS.find(p => p.id === c.id);
+          if (!cP) continue;
+
+          const cSys = getAdvisorSys(c.id, profile, memory, brandKit, true, c.angle || "", running, savedWork);
+          const cReply = await callClaude(cSys, [{ role:"user", content:
+`You're in a boardroom. The founder asked the ${pillar.role}: "${txt.slice(0,200)}".
+The ${pillar.role} answered: "${reply.slice(0,350)}…"
+
+Add your quick ${cP.role} take — specifically: ${c.angle || "your department's angle"}.
+
+Rules:
+- 1-2 sentences MAX. You're chiming in, not giving a lecture.
+- Speak in your voice. Start naturally (e.g. "From a numbers standpoint…", "Sales angle —", "Strategically,…").
+- Build on what was said. Add a NEW useful point, don't just agree.
+- If you genuinely have nothing to add, reply with exactly: PASS` }], false, 1, 220);
+
+          if (cReply && !/^PASS\b/i.test(cReply.trim())) {
+            const cMsg = { role:"assistant", content:cReply.trim(), pillarId:c.id, isHandoff:true };
+            running = { ...running, [activePillar]:[...running[activePillar], cMsg] };
+            setConvos(running); ss("fc_c", running);
+            // Small pause so bubbles appear in sequence — feels like people speaking up
+            await new Promise(r => setTimeout(r, 500));
           }
         }
-      } catch(e) { console.warn("Handoff failed:", e); }
+      } catch(e) { console.warn("Boardroom chime-in failed:", e); }
 
       // Memory extraction — quiet background process
       try {
@@ -5889,7 +5969,13 @@ Output ONLY valid JSON (no markdown):
               </div>
             ):(<>
               {curMsgs.map((m,i)=><Bubble key={i} m={m}/>)}
-              {(chatLoading||handoffLoading)&&<Dots color={pillar.color}/>}
+              {chatLoading&&<Dots color={pillar.color}/>}
+              {handoffLoading&&!chatLoading&&(
+                <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 2px",opacity:0.6}}>
+                  <Dots color="rgba(255,255,255,0.4)"/>
+                  <span style={{fontSize:10,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>the room is weighing in…</span>
+                </div>
+              )}
               <div ref={chatEnd}/>
             </>)}
           </div>
