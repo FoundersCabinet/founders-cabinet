@@ -553,7 +553,7 @@ function BrandSection({ profile, brandKit, setBrandKit }) {
           ))}
         </div>
       </div>
-      {tab==="kit"      && <BrandKitSection profile={profile} brandKit={brandKit} setBrandKit={setBrandKit}/>}
+      {tab==="kit"      && <BrandKitSection profile={profile} brandKit={brandKit} onUpdate={setBrandKit}/>}
       {tab==="creative" && <CreativeWrapper profile={profile} brandKit={brandKit}/>}
       {tab==="seo"      && <LocalSEOEngine profile={profile} brandKit={brandKit}/>}
     </div>
@@ -6317,7 +6317,7 @@ Output ONLY valid JSON (no markdown):
       {view==="pipeline"&&<PipelineSection profile={profile} brandKit={brandKit}/>}
       {view==="crm"&&<CRMSection profile={profile}/>}
 
-      {view==="brand"&&<BrandSection profile={profile} brandKit={brandKit} setBrandKit={setBrandKit}/>}
+      {view==="brand"&&<BrandSection profile={profile} brandKit={brandKit} setBrandKit={saveBrandKit}/>}
 
       {/* ══ GROWTH ENGINE ════════════════════════════════════════════ */}
       {view==="seo"        && <LocalSEOEngine     profile={profile}/>}
